@@ -1,7 +1,56 @@
 template:
-  # Fake the Marstek M1 sensors when using the Anker SolarBank 3 Pro as a Battery instead of a Marstek Venus
-  # The Template is based upon the MarstekVenusV3-modbus-TCP-IP interface created by fonske:
-  #   See https://github.com/fonske/MarstekVenusV3-modbus-TCP-IP/blob/main/marstek_m1_modbus_tcp.yaml
+  # Anker to M1 Marstek Template Package for HBC
+  # HBC is a Home Battery Control package for Home Assistant and Node-RED.
+  # With HBC you can use different battery strategies for steering your Marstek Venus Battery
+  #   See the HBC documentation for details: https://docs.homebatterycontrol.com/
+  #   See GitHub for the package download and installation instructions: https://github.com/gitcodebob/marstek-venus-rs485-node-red
+  #
+  # This single yaml file fakes the Marstek M1 interface for an Anker SolarBank 3 Pro.
+  # As a result you can use an Anker SolarBank 3 Pro Battery as the first battery in your HBC setup.
+  # Important Notice: The actual steering of the charge and discharge power is NOT implemented!
+  # 
+  # Prerequisites/Installation:
+  # - Install the HBC Package, Dashboard and Node_RED strategy flows
+  # - Configure HBC with one battery and a P1 Meter (I am using the HomeWizard P1 meter)
+  # - Install the Anker Integration for Home Assistant by thomluther with the MQTT option enabled.
+  #   This is a cloud based integration for many Anker Devices (including SolarBank 3 Pro)
+  #   See https://github.com/thomluther/ha-anker-solix
+  #   Warning: This is not the official Anker Integration (see below)!
+  # - Copy this file to the HomeAssistant package folder 
+  #   Same folder as the package files from HBC: house_battery_control.yaml and house_battery_control_config.yaml
+  # - Check that that you have the same solarbank entities as used in the template: sensor.solarbank_3_e2700_pro_*
+  #   Adapt these sensors when you have used a different name for these entities when installing the Anker integration.
+  # - Restart your Home Assistant or reload "All Yaml-configurations" (in development tools)
+  # - Optionally you may want to check the output of HBC (which is NOT applied to the Anker Battery):
+  #   Add the helpers from the bottom of the file to your (HBC) dashboard to see the effect of the HBC strategies.
+  #   type: entities
+  #   entities:
+  #     - entity: input_select.marstek_anker_helper_rs485_control_mode
+  #       name: Control Mode Helper for Anker
+  #     - entity: input_select.marstek_anker_helper_user_work_mode
+  #       name: User Work Mode Helper for Anker
+  #     - entity: input_select.marstek_anker_helper_forcible_charge_discharge
+  #         name: Forcible Charge/Discharge Mode
+  #     - entity: input_number.marstek_anker_helper_forcible_charge_power
+  #         name: Forcible Charge Power (W)
+  #     - entity: input_number.marstek_anker_helper_forcible_discharge_power
+  #       name: Forcible Discharge Power (W)
+  #     - entity: input_number.marstek_anker_helper_charge_to_soc
+  #       name: Charge to SOC (%)
+  #     - entity: input_select.marstek_anker_helper_backup_function
+  #       name: Backup Function
+  #    title: Marstek to Anker Helpers
+  #
+  # This Template is based upon the MarstekVenusV3-modbus-TCP-IP interface created by fonske.
+  # It provides the input and output interfaces as needed by HBC as defined for the Marstek Venus Batteries.
+  #   See: https://github.com/fonske/MarstekVenusV3-modbus-TCP-IP/blob/main/marstek_m1_modbus_tcp.yaml for the Marstek Venus V3 with modbus ethernet support
+  #   And: https://github.com/fonske/MarstekVenus-LilygoRS485 for the Marstek Venus with Lilygo RS485 modbus (using a cable)
+  #
+  # The official Anker integration (with local modbus) does NOT yet support the SolarBank 3 Pro!
+  #   When Anker decides to add support for the SolarBank 3 this will be a big improvement
+  #   since it offers local support but hopefully also better support for setting the charge power level.
+  #   See https://github.com/anker-charging/ha-anker-solix-official
+  #
   # Remark : This yaml only contains sensors and templates (sensor, select or number) for the M1 Battery (not for the optional M2..M6)
   #   Copies of this file are needed with M1 changed to Mx (e.g. anker_to_marstek_m2.yaml etc)
   #
@@ -40,7 +89,7 @@ template:
         device_class: battery
         state_class: measurement
         state: >
-          {% set val = states('sensor.system_sw5_anker_2700_sb_state_of_charge') %}
+          {% set val = states('sensor.solarbank_3_e2700_pro_state_of_charge') %}
           {{ val if val not in ['unknown', 'unavailable'] else 0 }}
 
       # 2. Battery Voltage: Retrieve the SolarBank Battery Voltage (Does NOT exist so always 0!) (Readonly field)
@@ -95,7 +144,7 @@ template:
           {{ power | int(0) if power not in ['unknown', 'unavailable'] else 0 }}
 
       # 5a. Inverter State Number: Convert from Anker SolarBank Mode
-      # Map the Anker status to the Marstek State Number (1=detection, 2=charge or charge_ac, 3=discharge, 4=any other state) 
+      # Map the Anker status to the Marstek State Number (1=detection, standby or fully_charged, 2=charge or charge_ac, 3=discharge, 4=any other state (there are many but not often seen)) 
       - name: "Marstek M1 Inverter State Number (for Anker SB3)"
         default_entity_id: sensor.marstek_m1_inverter_state_number
         unique_id: marstek_m1_inverter_state_number_sb3
@@ -104,7 +153,7 @@ template:
           {% set pro_mode = states('sensor.solarbank_3_e2700_pro_mode') %}
           {% if pro_mode in ['discharge'] %} 3
           {% elif pro_mode in ['charge_ac','charge'] %} 2
-          {% elif pro_mode in ['detection'] %} 1
+          {% elif pro_mode in ['detection','standby','fully_charged'] %} 1
           {% else %} 4
           {% endif %}  
 
@@ -405,3 +454,4 @@ input_number:
     min: 12
     max: 100
     unit_of_measurement: "%"
+
