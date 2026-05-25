@@ -92,7 +92,8 @@ description: >+
   Stop and HBC Power: V Charge and V Discharge. Something goes wrong when
   starting charge mode (backup switched on and directly switched off again)
 
-  - V Limited Test with HBC to check that the Anker charging, discharging and stop are working
+  - V Limited Test with HBC to check that the Anker charging, discharging and
+  stop are working
 
     - V HBC Control Mode: Manual -> RS485 Control Mode Helper: disable -> Anker Battery: manual with preset=0
 
@@ -192,8 +193,7 @@ actions:
       of the battery and notification messages
     variables:
       TEST_INDIVIDUAL_UPDATES: false
-      NOTIFY_VAR_PHONE: notify.none
-      NOTIFY_VAR_PHONE2: notify.mobile_app_sm_a536b
+      NOTIFY_VAR_PHONE: notify.mobile_app_sm_a536b
       ANKER_CHARGE_MODE: backup
       ANKER_DISCHARGE_MODE: manual
       ANKER_STOP_MODE: manual
@@ -307,7 +307,9 @@ actions:
               Anker Battery Charge Power is not correct (current power is
               different from target power as multiple of 100) (For another
               battery compare with target_charge_power)?
-            value_template: "{{ (current_anker_charge_power != target_charge_power100_option) }}"
+            value_template: >-
+              {{ (current_anker_charge_power != target_charge_power100_option)
+              }}
         then:
           - alias: >-
               Change the Charge Power Value (using AC Input Limit) of the Anker 
@@ -401,7 +403,7 @@ actions:
             data:
               title: HBC triggers Discharging M1
               message: HBC triggers Discharging of the Anker Battery (M1).
-            enabled: true
+            enabled: false
         enabled: true
       - alias: If Discharge Power is incorrect then Adapt the Anker Discharge Power
         if:
@@ -456,7 +458,7 @@ actions:
             data:
               title: HBC triggers Stopping M1
               message: HBC triggers Stopping of the Anker Battery (M1).
-            enabled: true
+            enabled: false
         enabled: true
       - alias: >-
           If Stop Power is incorrect then Adapt the Anker Stop Power (Discharge
@@ -487,8 +489,10 @@ actions:
             enabled: false
         enabled: true
     enabled: true
-  - alias: Perform individual updates of Anker Entities for testing (disable 3 branches above when using this branch)  
-    if: 
+  - alias: >-
+      Perform individual updates of Anker Entities for testing (disable 3
+      branches above when using this branch)
+    if:
       - condition: template
         alias: Testing Individual Updates
         value_template: "{{ TEST_INDIVIDUAL_UPDATES }}"
@@ -506,8 +510,8 @@ actions:
           milliseconds: 0
         enabled: false
       - alias: >-
-          Test Setting the Anker Backup End datetime field (using set value NOT set
-          datetime!)
+          Test Setting the Anker Backup End datetime field (using set value NOT
+          set datetime!)
         action: datetime.set_value
         target:
           entity_id: "{{ anker_backup_end_entity }}"
@@ -528,7 +532,7 @@ actions:
           entity_id: "{{ anker_charge_power_entity }}"
         data:
           option: "{{ target_charge_power100_option }}"
-        enabled: true
+        enabled: false
       - alias: >-
           Testing Change the Charge Power Value (AC Input Limit) of the Anker
           Battery (DOES NOT WORK FOR ANKER SINCE INPUT LIMIT IS A SELECT ISO A
@@ -563,5 +567,5 @@ actions:
             Trigger received '{{ trigger_id }}' and notifying my variabele {{
             NOTIFY_VAR_PHONE }} phone.  {# I am forcing 3 new lines: #} {{
             '\u2800\n\u2800\n\u2800\n' -}}  {{ hbc_state_message }}
-        enabled: false
+        enabled: true
 mode: single
