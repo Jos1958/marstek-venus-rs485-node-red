@@ -1,0 +1,479 @@
+template:
+  # Anker to M1 Marstek Template Package for HBC
+  # HBC is a Home Battery Control package for Home Assistant and Node-RED.
+  # With HBC you can use different battery strategies for steering your Marstek Venus Battery
+  #   See the HBC documentation for details: https://docs.homebatterycontrol.com/
+  #   See GitHub for the package download and installation instructions: https://github.com/gitcodebob/marstek-venus-rs485-node-red
+  #
+  # This single yaml file fakes the Marstek M1 interface for an Anker SolarBank 3 Pro.
+  # As a result you can use an Anker SolarBank 3 Pro Battery as the first battery in your HBC setup.
+  # Important Notice: The actual steering of the charge and discharge power is NOT implemented!
+  # 
+  # Prerequisites/Installation:
+  # - Install the HBC Package, Dashboard and Node_RED strategy flows
+  # - Configure HBC with one battery and a P1 Meter (I am using the HomeWizard P1 meter)
+  # - Install the Anker Integration for Home Assistant by thomluther with the MQTT option enabled.
+  #   This is a cloud based integration for many Anker Devices (including SolarBank 3 Pro)
+  #   See https://github.com/thomluther/ha-anker-solix
+  #   Warning: This is not the same integration as the official Anker Integration (see below)!
+  # - Copy this file to the HomeAssistant package folder 
+  #   Same folder as the package files from HBC: house_battery_control.yaml and house_battery_control_config.yaml
+  # - Check that that you have the same solarbank entities as used in the template: sensor.solarbank_3_e2700_pro_*
+  #   Adapt these sensors when you have used a different name for these entities when installing the Anker integration.
+  # - Restart your Home Assistant or reload "All Yaml-configurations" (in development tools)
+  #
+  # - Optionally you may want to check the output of HBC (which is NOT applied to the Anker Battery):
+  #   Add the Marstek M1 to Anker Helpers from the bottom of the file to your (HBC) dashboard to see the effect of the HBC strategies (from the code-editor):
+  #   type: entities
+  #   entities:
+  #     - entity: input_select.marstek_m1_anker_helper_rs485_control_mode
+  #       name: Control Mode Helper for Anker
+  #     - entity: input_select.marstek_m1_anker_helper_user_work_mode
+  #       name: User Work Mode Helper for Anker
+  #     - entity: input_select.marstek_m1_anker_helper_forcible_charge_discharge
+  #         name: Forcible Charge/Discharge Mode
+  #     - entity: input_number.marstek_m1_anker_helper_forcible_charge_power
+  #         name: Forcible Charge Power (W)
+  #     - entity: input_number.marstek_m1_anker_helper_forcible_discharge_power
+  #       name: Forcible Discharge Power (W)
+  #     - entity: input_number.marstek_m1_anker_helper_charge_to_soc
+  #       name: Charge to SOC (%)
+  #     - entity: input_select.marstek_m1_anker_helper_backup_function
+  #       name: Backup Function
+  #    title: Marstek to Anker Helpers
+  #
+  # This Template is based upon the MarstekVenusV3-modbus-TCP-IP interface created by fonske.
+  # It provides the input and output interfaces as needed by HBC as defined for the Marstek Venus Batteries.
+  #   See: https://github.com/fonske/MarstekVenusV3-modbus-TCP-IP/blob/main/marstek_m1_modbus_tcp.yaml for the Marstek Venus V3 with modbus ethernet support
+  #   And: https://github.com/fonske/MarstekVenus-LilygoRS485 for the Marstek Venus with Lilygo RS485 modbus (using a cable)
+  #
+  # The official Anker integration (with local modbus) does NOT yet support the SolarBank 3 Pro!
+  #   When Anker decides to add support for the SolarBank 3 this will be a big improvement
+  #   since it offers local support but hopefully also better support for setting the charge power level.
+  #   See https://github.com/anker-charging/ha-anker-solix-official
+  #
+  # Remark : This yaml only contains sensors and templates (sensor, select or number) for the M1 Battery (not for the optional M2..M6)
+  #   Copies of this file are needed with M1 changed to Mx (e.g. anker_to_marstek_m2.yaml etc)
+  #
+  # WARNING: Anker updates based on the Forcible Charge/Discharge mode and the related Charge and Discharge Power are NOT implemented in this file!
+  #   Additional automations are needed to have the Anker SolarBank charge and discharge at a specified power level.
+  #   However The helpers defined at the bottom of the file are updated when HBC decides to start charge or discharge 
+  #   and can be used to trigger the charging or discharging of the Anker SolarBank Battery.
+  #   For discharge the Anker 'manual' mode can be used and the specific discharge power level can be set.
+  #   For charge the Anker 'backup' mode can be used but there is not a specific charge power level that can be used.
+  #   Instead the max input limit (a multiple of 100) can be changed and used for the specific discharge power level.
+  #   I have implemented this in a python module but I am not so sure yet it can also be done in a standard (jinja) HA automation.
+  #   
+  # OTHER BATTERY BRANDS (Not Anker):
+  # This file could be used as a template to connect HBC to other Batttery brands.
+  # The template sensors get there status from anker sensors and these anker sensors (sensor.solarbank_3_e2700_*) need to be replaced by similar sensors of your battery.
+  # For status values you may need to define a new mapping from your battery to the Marstek state (e.g. sensor.marstek_m1_inverter_state_number).
+  # For other sensors there may not be an equivalant sensor but you may need to construct the sensor using a combination of other sensors (example for anker: sensor.marstek_m1_ac_power) .
+  # Batteries that implement a local api and allow the battery to charge/discharge with a specific power level are the best candidates.
+  #
+  # Remark: The entities below are created with the specified default entity name (using default_entity_id) 
+  #   If no default entity name is specified then HA will generate a name based on the name of the field (e.g. sensor.marstek_m1_device_name_for_anker_sb3 iso sensor.marstek_m1_device_name).
+  #   Be aware that if the entity (with the same unique_id) was already created before without specifying a default_entity_id then the existing entity name is NOT adapted!
+  #   In other words: The default_entity_id is only used as the entity name when an entity is created (not when updated) with the specified unique_id.
+  #   HBC relies on the exact entity names so check afterwards if the new templates are indeed created with the intended entity names!
+  - sensor:
+      # 0. Device Name: Fixed Name for the fake Marstek M1 
+      # HBC will display the battery on the HBC Dashboard will the Device Name is NOT 'unknown' (any name will do)
+      - name: "Marstek M1 Device Name (for Anker SB3)"
+        default_entity_id: sensor.marstek_m1_device_name
+        unique_id: marstek_m1_device_name_sb3
+        icon: mdi:rename-box
+        state: >
+          {{ "Solarbank 3 E2700 Pro (A17C5)" }}
+      
+      # 1. State of Charge (SOC): Retrieve the Anker SolarBank State of Charge (Readonly field)
+      - name: "Marstek M1 Battery State Of Charge (for Anker SB3)"
+        default_entity_id: sensor.marstek_m1_battery_state_of_charge
+        unique_id: marstek_m1_battery_state_of_charge_sb3
+        unit_of_measurement: "%"
+        device_class: battery
+        state_class: measurement
+        state: >
+          {% set val = states('sensor.solarbank_3_e2700_pro_state_of_charge') %}
+          {{ val if val not in ['unknown', 'unavailable'] else 0 }}
+
+      # 2. Battery Voltage: Retrieve the SolarBank Battery Voltage (Readonly field)
+      # The Anker Battery integration does not have an entity for voltage so the result will always be 0 (not a problem for HBC)
+      - name: "Marstek M1 Battery Voltage (for Anker SB3)"
+        default_entity_id: sensor.marstek_m1_battery_voltage
+        unique_id: marstek_m1_battery_voltage_sb3
+        unit_of_measurement: V
+        device_class: voltage
+        state_class: measurement
+        state: >
+          {% set voltage = states('sensor.solarbank_3_e2700_pro_battery_voltage') %}
+          {{ val if voltage not in ['unknown', 'unavailable'] else 0 }}
+
+      # 3. Battery Total Energy (kWh) - Retrieve the SolarBank Battery Capacity (Wh) (Readonly field)
+      - name: "Marstek m1 Battery Total Energy (for Anker SB3)"
+        default_entity_id: sensor.marstek_m1_battery_total_energy
+        unique_id: marstek_m1_battery_total_energy_sb3
+        unit_of_measurement: kWh
+        device_class: energy_storage
+        state_class: measurement
+        state: >
+          {% set battery_capacity = states('number.solarbank_3_e2700_pro_battery_capacity') %}
+          {{ ((battery_capacity | float(0)) / 1000) | round(1)  if battery_capacity not in ['unknown', 'unavailable'] else 0 }}
+
+      # 4a. AC Power (Watt) - Retrieve the SolarBank Discharge Power minus Charge Power (Readonly field)
+      # External Power delivered or extracted to/from the House (+ for discharge/deliver and - for charge/extract of battery/house)
+      # Remark: Anker does not have a combined field (Discharge is positive when discharging and Charge is positive when charging)
+      # AC House Power (Power delivered to the house) is therefore Discharge Power minus Charge Power, positive when discharging and negative when charging the battery
+      - name: "Marstek M1 AC Power (for Anker SB3)"
+        default_entity_id: sensor.marstek_m1_ac_power
+        unique_id: marstek_m1_ac_power_sb3
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: >
+          {% set discharge = states('sensor.solarbank_3_e2700_pro_discharge_power') %} 
+          {% set charge    = states('sensor.solarbank_3_e2700_pro_charge_power')    %} 
+          {% set discharge = discharge | int(0) if discharge not in ['unknown', 'unavailable'] else 0 %}
+          {% set charge    = charge    | int(0) if charge    not in ['unknown', 'unavailable'] else 0 %}
+          {{ (discharge - charge) }}
+
+      # 4b. Battery Power (Watt): Retrieve the SolarBank Battery Power (Readonly field)
+      # I am using the Anker Solarbank Battery Power but I suspect this results in the same value as the AC Power above!
+      # Internal Power (after the inverter so without inverter losses) to charge (+) or discharge (-) the battery
+      - name: "Marstek M1 Battery Power (for Anker SB3)"
+        default_entity_id: sensor.marstek_m1_battery_power
+        unique_id: marstek_m1_battery_power_sb3
+        unit_of_measurement: W
+        device_class: power
+        state_class: measurement
+        state: >
+          {% set power = states('sensor.solarbank_3_e2700_pro_battery_power') %} 
+          {{ power | int(0) if power not in ['unknown', 'unavailable'] else 0 }}
+
+      # 5a. Inverter State Number: Convert from Anker SolarBank Mode
+      # Map the Anker status to the Marstek State Number (1=detection, standby or fully_charged, 2=charge or charge_ac, 3=discharge, 4=any other state (there are many but not often seen)) 
+      - name: "Marstek M1 Inverter State Number (for Anker SB3)"
+        default_entity_id: sensor.marstek_m1_inverter_state_number
+        unique_id: marstek_m1_inverter_state_number_sb3
+        icon: mdi:state-machine
+        state: >
+          {% set pro_mode = states('sensor.solarbank_3_e2700_pro_mode') %}
+          {% if pro_mode in ['discharge'] %} 3
+          {% elif pro_mode in ['charge_ac','charge'] %} 2
+          {% elif pro_mode in ['detection','standby','fully_charged'] %} 1
+          {% else %} 4
+          {% endif %}  
+
+      # 5b. Inverter State: Convert from Inverter State Number (The State Number is based upon Anker SolarBank Mode, see above)
+      # Map the Inverter State Number to the Inverter State (with state values used for by a Marstek Battery)
+      # Note: This is just a copy of the original mapping by fonske (except for 'Invalid state' iso 'Unknown state')
+      - name: "Marstek M1 Inverter State (for Anker SB3)"
+        default_entity_id: sensor.marstek_m1_inverter_state
+        unique_id: marstek_m1_inverter_state_sb3
+        icon: mdi:state-machine
+        state: >
+          {% set state_nbr = states('sensor.marstek_m1_inverter_state_number') %}
+          {% set mapping = {
+            0: 'Sleep',
+            1: 'Standby',
+            2: 'Charge',
+            3: 'Discharge',
+            4: 'Fault',
+            5: 'Idle',
+            6: 'AC bypass'
+          } %}
+          {% if state_nbr not in ['unknown', 'unavailable', ''] %}
+            {{ mapping.get(state_nbr | int, 'Invalid state') }}
+          {% else %}
+            unknown
+          {% endif %}
+
+ 
+      # 6. Battery Remaining Energy (kWh): Retrieved from Anker SolarBank Battery Energie (in Wh)
+      - name: "Marstek m1 Battery Remaining Capacity (for Anker SB3)"
+        default_entity_id: sensor.marstek_m1_battery_remaining_capacity
+        unique_id: marstek_m1_battery_remaining_capacity_sb3
+        icon: mdi:battery-arrow-down-outline
+        unit_of_measurement: kWh
+        state_class: measurement
+        device_class: energy_storage
+        state: >
+          {% set remaining_energy = states('sensor.solarbank_3_e2700_pro_battery_energy') %}
+          {{ ((remaining_energy | float(0)) / 1000) | round(1) if remaining_energy not in ['unknown', 'unavailable'] else 0 }}
+
+  - number:
+      # 11. Max Charge Power (Watt): Hardcoded at 1200 W for the Anker Battery
+      # Warning: No updates allowed since the AC Input limit is used for charging the battery with a specified power amount (0,100,..,1100,1200) using backup mode
+      - name: "Marstek M1 Max Charge Power (for Anker SB3)"
+        default_entity_id: number.marstek_m1_max_charge_power
+        unique_id: marstek_m1_max_charge_power_sb3
+        unit_of_measurement: W
+        # device_class: power  <-- Device class is removed, not allowed for a number
+        # I am using the input limit for controling the charging power of the Anker battery but here the maximum allow input power is expected, therefore a fixed value is returned!
+        state: >
+          {% set val = states('select.solarbank_3_e2700_pro_ac_input_limit') | int(0) %}
+          {# val if val not in ['unknown', 'unavailable'] else 0 #}
+          {{ 1200 }} 
+        min: 0
+        max: 1200
+        step: 100
+        set_value:
+          - stop: "Placeholder" # Ignoring a set value for now
+            
+      # 12. Max Discharge Power (Watt): Retrieves the Anker (AC) Output Limit 
+      # Warning: No updates supported yet, only values 800 or 1200 Watt are allowed anyway (change the max output limit in the Anker App instead)
+      - name: "Marstek M1 Max Discharge Power (for Anker SB3)"
+        default_entity_id: number.marstek_m1_max_discharge_power
+        unique_id: marstek_m1_max_discharge_power_sb3
+        unit_of_measurement: W
+        # device_class: power
+        state: >
+          {% set val = states('select.solarbank_3_e2700_pro_output_limit') %}
+          {{ val | int(0) if val not in ['unknown', 'unavailable'] else 0 }}
+        min: 800
+        max: 1200
+        step: 400
+        set_value:
+          - stop: "Placeholder" # Ignoring a set value for now
+
+  - number:
+      # 13. Forcible Charge Power: Updates the Forcible Charge Power Helper for Anker (iso modbus.write_register 42020)
+      # This number field is used in combination with the select Marstek M1 Forcible Charge/Discharge and is set for both charging and discharging modes
+      - name: "Marstek M1 Forcible Charge Power (for Anker SB3)"
+        default_entity_id: number.marstek_m1_forcible_charge_power
+        unique_id: marstek_m1_forcible_charge_power_sb3
+        icon: mdi:tune-variant
+        unit_of_measurement: "W"
+        min: 0
+        max: 5000 # A Maximum value is required since the default is 100
+        step: 1        
+        state: "{{ states('input_number.marstek_m1_anker_helper_forcible_charge_power') }}"
+        set_value:
+#         - stop: "Placeholder" # Ignoring a set value for now
+          - service: input_number.set_value
+            target:
+              entity_id: input_number.marstek_m1_anker_helper_forcible_charge_power
+            data:
+              value: "{{ value }}"
+
+      # 14. Forcible Discharge Power: Updates the Forcible Discharge Power Helper for Anker (iso modbus.write_register 42021)
+      # This number field is used in combination with the select Marstek M1 Forcible Charge/Discharge and is set for both charging and discharging modes
+      - name: "Marstek M1 Forcible Discharge Power (for Anker SB3)"
+        default_entity_id: number.marstek_m1_forcible_discharge_power
+        unique_id: marstek_m1_forcible_discharge_power_sb3
+        icon: mdi:tune-variant
+        unit_of_measurement: "W"
+        state: "{{ states('input_number.marstek_m1_anker_helper_forcible_discharge_power') }}"
+        min: 0
+        max: 5000 # A Maximum value is required since the default is 100
+        step: 1        
+        set_value:
+          - service: input_number.set_value
+            target:
+              entity_id: input_number.marstek_m1_anker_helper_forcible_discharge_power
+            data:
+              value: "{{ value }}"
+
+      # 15. Charge to SOC Power: Updates the Charge To SOC Helper for Anker (iso modbus.write_register 42011)
+      # Remark: Currently the HBC strategies do not use this Marstek Charge to SOC number!
+      # Marstek Modbus Comment:
+      # Overrides 42010
+      # - 42000 write 55AA
+      # - 42011 write value
+      # - 42000 write 55BB = disable
+      - name: "Marstek M1 Charge To SOC Number (for Anker SB3)"
+        default_entity_id: number.marstek_m1_charge_to_soc
+        unique_id: marstek_m1_charge_to_soc_sb3
+        unit_of_measurement: "%"
+        state: "{{ states('input_number.marstek_m1_anker_helper_charge_to_soc') }}"
+        min: 12
+        max: 100 
+        step: 1        
+        set_value:
+          - service: input_number.set_value
+            target:
+              entity_id: input_number.marstek_m1_anker_helper_charge_to_soc
+            data:
+              value: "{{ value }}"
+
+  - select:
+      # 21. RS485 Control Mode: Updates the Control Mode Helper for Anker (iso modbus.write_register 42000)
+      # The Control Mode is linked to the Master Battery Control on the HBC Dashboard
+      # 'Manual control' and 'Marstek control' leads to a 'disabled' control mode
+      # 'Full control'                         leads to a 'enabled'  control mode
+      # Remark: The Marstek Venus will only react to other RS485 modbus commands when controle mode is 'enable' 
+      #   but this might not be relevant for other type of batteries (including anker). 
+      #   HBC uses it to stop applying strategies to the battery (but forcible charge/discharge may still be on charge or discharge afterwards).
+      # Marstek Modbus Comment for Marstek m1 RS485 Control Mode NUMBER: 
+      # Registers 42000 - 42999 only work when this is set.
+      # 0x55AA = Enable 21930
+      # 0x55BB = Disable 21947
+      - name: "Marstek M1 RS485 Control Mode (for Anker SB3)"
+        default_entity_id: select.marstek_m1_rs485_control_mode
+        unique_id: marstek_m1_rs485_control_mode_sb3
+        icon: mdi:connection
+        options: "{{ ['disable', 'enable'] }}"
+        state: "{{ states('input_select.marstek_m1_anker_helper_rs485_control_mode') }}"
+        select_option:
+          - service: input_select.select_option
+            target:
+              entity_id: input_select.marstek_m1_anker_helper_rs485_control_mode
+            data:
+              option: "{{ option }}"
+          # Optional: Send a command directly to the Anker Battery
+          
+      # 22. User Work Mode: Updates the User Work Mode Helper for Anker (iso modbus.write_register 43000)
+      # Remark: Not sure if there is a HBC strategy already that uses this marstek function (I assume there is not)
+      # Marstek Modbus Comment for Marstek m1 User Work Mode NUMBER: 
+      # Set to 0 = Manual, see registers 43100-43129
+      # Set to 1 = Self consumption, aka Anti-feed
+      # Set to 2 = Set to AI mode, after set reverts to 1, still determining what register changes in AI mode
+      - name: "Marstek M1 User Work Mode (for Anker SB3)"
+        default_entity_id: select.marstek_m1_user_work_mode
+        unique_id: marstek_m1_user_work_mode_sb3
+        icon: mdi:auto-mode
+        options: "{{ ['manual', 'anti-feed','ai'] }}"
+        state: "{{ states('input_select.marstek_m1_anker_helper_user_work_mode') }}"
+        select_option:
+          - service: input_select.select_option
+            target:
+              entity_id: input_select.marstek_m1_anker_helper_user_work_mode
+            data:
+              option: "{{ option }}"
+          # Optional: Send a command directly to the Anker Battery
+
+      # 23. Forcible Charge/Discharge: Updates the Forcible Charge/Discharge Helper for Anker (iso modbus.write_register 42010)
+      # This select field is used in combination with the fields Marstek M1 Forcible Charge and Discharge and Power
+      # Warning: The charge and discharge power will be set both to the same value when charging or discharging and are both reset when stopping
+      # Marstek Modbus Comment for Marstek m1 Forcible Charge Discharge Number: 
+      # - 0 stop
+      # - 1 Forces to charge according to 42020 value
+      # - 2 Forces to discharge according to 42021 value
+      # Works as follow:
+      # - 42000 write 55AA
+      # - 42020 write value or 42021 write value
+      # - 42010 set to 1 or 2
+      # - 42000 write 55BB = disable
+      - name: "Marstek M1 Forcible Charge/Discharge (for Anker SB3)"
+        default_entity_id: select.marstek_m1_forcible_charge_discharge
+        unique_id: marstek_m1_forcible_charge_discharge_sb3
+        icon: mdi:arrow-up-down
+        options: "{{ ['stop', 'charge','discharge'] }}"
+        state: "{{ states('input_select.marstek_m1_anker_helper_forcible_charge_discharge') }}"
+        select_option:
+          - service: input_select.select_option
+            target:
+              entity_id: input_select.marstek_m1_anker_helper_forcible_charge_discharge
+            data:
+              option: "{{ option }}"
+          # Optional: Send a command directly to the Anker Battery (use in combination with forcible charge or discharge power)
+
+      # 24. Backup Function: Updates the Backup Function Helper for Anker (iso modbus.write_register 41200)
+      # Remark: Not sure if there is a HBC strategy already that uses this marstek function (I assume there is not)
+      - name: "Marstek M1 Backup Function (for Anker SB3)"
+        default_entity_id: select.marstek_m1_backup_function
+        unique_id: marstek_m1_backup_function_sb3
+        icon: mdi:arrow-up-down
+        options: "{{ ['enable', 'disable'] }}"
+        state: "{{ states('input_select.marstek_m1_anker_helper_backup_function') }}"
+        select_option:
+          - service: input_select.select_option
+            target:
+              entity_id: input_select.marstek_m1_anker_helper_backup_function
+            data:
+              option: "{{ option }}"
+
+  - update:
+      - name: "Cheapest Energy Hours Update2"
+        latest_version: "1.1.0" # This simulates the version available for update
+        installed_version: "1.1.0"
+        title: "Cheapest Energy Hours"
+        release_summary: "This is a fake update to test my automations and dashboard layout."
+        
+          
+# The Marstek for Anker Helpers for storing the charge/discharge parameters required for the Anker Battery
+# If HBC selects another option of the related template (via select_option) then the helper state will be updated
+# If a User selects in the HA UI another option then the state of the related template is updated (and the new option is available to HBC via the linked sensors above)
+# How to use in the future:
+# - At the moment there is no direct link activated to the Anker Battery!!!!
+#   The Forcible Charge/Discharge and Power helper fields are clearly updated by HBC depending on the chosen strategy
+# - The Helpers do contain the result of the decisions taken by the HBC strategy!
+#   - RS485 Control Mode
+#     - If the HBC Control Mode goes from 'Manual Control' or 'Marstek Control' to 'Full Control' (by HBC) then the RS458 Control Mode goes to 'enable'
+#     - If the HBC Control Mode goes from 'Full Control' (by HBC) to 'Manual Control' or 'Marstek Control' then the RS458 Control Mode goes to 'disable'
+#     - So the RS485 Control Mode can be used to determine if HBC is set to control the battery or not
+#     - Warning: HBC will not enable the control mode again when it was (manually) set to disable but it will start charging/discharging (leaving control mode disable)!
+#   - Forcible Charge or Discharge Mode and Forcible Charge and Discharge Power
+#     - If HBC decides that charging/discharge from/to AC is applicable then 
+#       - Forcible Charge/Discharge is set to 'charge' or 'discharge'
+#       - Forcible Charge and Discharge Power is set to the Power (in W) to charge (or) discharge the Battery
+#         Warning: Both Charge and Discharge Power are always set to the same number! (for both charging and discharging)
+#   - User Work Mode  - I suspect that HBC is not using this mode (I have seen no changes to its value)
+#   - Backup Function - I suspect that HBC is not using this mode (I have seen no changes to its value)
+#   - Charge to SOC   - Bob has confirmed that HBC is not using this SOC % 
+#   Warning: I am NOT using HBC to do Self-Consumption (PID parameters are all 0) since Anker settings are updated via the cloud (not via local api)
+#     and I assume that this will be way to slow (also since settings cannot be changed regularly, required at least 30s between changes)!
+
+# Input Select Helpers:
+input_select:
+  # A. Marstek RS485 Control Mode Helper:
+  marstek_m1_anker_helper_rs485_control_mode:
+    name: "Marstek RS485 Control Mode Helper (for Anker SB3)"
+    icon: mdi:database-import
+    options:
+      - "disable"
+      - "enable"
+
+  # B. Marstek User Work Mode Helper (Used by HBC?):
+  marstek_m1_anker_helper_user_work_mode:
+    name: "Marstek User Work Mode Helper (for Anker SB3)"
+    icon: mdi:database-import
+    options:
+      - "manual"
+      - "anti-feed"
+      - "ai"
+
+  # C. Marstek Forcible Charge or Discharge Mode Helper:
+  marstek_m1_anker_helper_forcible_charge_discharge:
+    name: "Marstek Forcible Charge/Discharge Helper (for Anker SB3)"
+    icon: mdi:database-import
+    options:
+      - "stop"
+      - "charge"
+      - "discharge"
+
+  # D. Marstek Backup Function Helper (Used by HBC?):
+  marstek_m1_anker_helper_backup_function:
+    name: "Marstek Backup Function Helper (for Anker SB3)"
+    icon: mdi:database-import
+    options:
+      - "disable"
+      - "enable"
+
+# Input Number Helpers:
+input_number:
+  # E. Marstek Forcible Charge Power Helper:
+  marstek_m1_anker_helper_forcible_charge_power:
+    name: "Marstek Forcible Charge Power Helper (for Anker SB3)"
+    icon: mdi:database-import
+    initial: 0
+    min: 0
+    max: 5000
+    unit_of_measurement: "W"
+  # F. Marstek Forcible Discharge Power Helper:
+  marstek_m1_anker_helper_forcible_discharge_power:
+    name: "Marstek Forcible Discharge Power Helper (for Anker SB3)"
+    icon: mdi:database-import
+    initial: 0
+    min: 0
+    max: 5000
+    unit_of_measurement: "W"
+  # G. Marstek Charge to State of Charge Helper (not used by HBC):
+  marstek_m1_anker_helper_charge_to_soc:
+    name: "Marstek Charge To SOC Helper (for Anker SB3)"
+    icon: mdi:database-import
+    initial: 12
+    min: 12
+    max: 100
+    unit_of_measurement: "%"
+            
