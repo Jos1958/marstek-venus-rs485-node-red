@@ -1,0 +1,567 @@
+alias: HBC Anker Charge or Discharge Event for M1 Battery
+description: >+
+  ### HBC Forcible Charge/Discharge Handler (for Anker Battery)  
+
+  This automation supports updates by Home Battery Control (HBC) of an Anker
+  SolarBank 3 Pro Battery. It requires the 'Anker to M1 Marstek' interface
+  (anker_to_m1_marstek.yaml) to be installed in the packages folder of Home
+  Assistant.
+
+  HBC has 4 important output entities that control the charging and discharge of
+  the Battery. 
+
+  - RS485 Control Mode (Enables or Disables the modbus interface to the Marstek
+  battery) 
+
+  - Forcible Charge/Discharge Mode (values:  charge, discharge, stop) 
+
+  - Forcible Charge Power (at the moment also applicable to discharging) 
+
+  - Forcible Discharge Power (at the moment always the same value as Charge
+  Power, therefor the trigger is DISABLED for now)
+
+
+  For the Anker Battery these changes are not directly applied to the Battery.
+  The Marstek M1 Anker Helpers are set when Marstek M1 (output) entities are
+  changed by Home Battery Control (HBC).
+
+
+  This automation is triggered by changes of these Marstek M1 Anker Helpers and
+  will update the Anker Battery. The RS485 Control Mode is not applicable to the
+  Anker Battery (since it does not have a modbus interface). However HBC uses
+  this control mode to force a stop of the Battery. Therefore changes to the
+  RS485 Control Mode are handled here aswell to stop the charging or
+  discharging.
+
+
+  The automation handles triggers for the Anker Helpers: 
+
+  - RS485 Control Mode changes 
+
+  - Forcible Charge/Discharge state to charge, discharge or stop 
+
+  - Forcible Charge Power value changed 
+
+  - Forcible Discharge Power value changed (DISABLED) 
+
+  The automation mode is Single which implies that only one of multiple events
+  is handled and the others are lost. For example when HBC starts charging then
+  the Forcible Charge/Discharge state is changed and the Forcible Charge Power
+  value is changed. Only the first event is handled and the second event is
+  lost. The automation starts with a small delay (300ms) before retrieving the
+  Helper values. This was needed since the automation was already started when
+  it started charging before the charge power was applied to the helper.
+
+  Implementation List:  
+
+  - V Define a list of triggers (forcible charge/discharge to charge, discharge
+  or stop, charge and discharge power, rs485 control mode) 
+
+  - V Determine the value of the relevant HBC values (using the Marstek M1 Anker
+  helpers) 
+
+  - V Determine the trigger values and some other constants V Define a list of
+  Anker Entity names (for the Anker SolarBank 3 Integration) V Determine the
+  current values of the Anker Entities 
+
+  - V Determine the target values for the Anker Entities 
+
+  - V Compare the current value and the target value to decide which Anker
+  values need to be updated (limiting cloud updates as much as possible) 
+
+  - V Discharging using the Anker 'manual' (also called Custom) mode and the
+  related System Output Preset (rounded at 10W)
+
+  - V Charge using the Anker 'backup' switch and the Maximum AC input limit 
+
+  - V Set the Backup End at tomorrow end of day when 'backup' mode is switched
+  on, afterwards added a delay of 1s since otherwise the backup switch goes back
+  to off in the next step (change the input limit) 
+
+  - V Convert the Charge Power to a multiple of 100W (0,100,..,max_input_limit)
+  to fit with the options available for the AC input limit select 
+
+  - V Disable the Anker 'backup' switch before starting discharge or when
+  stopping the charging, set the AC Input Limit back to the Max Charge Power and
+  add a 1s delay after switching off 
+
+  - V Test the setting of Anker Entities (see at the bottom of the file, steps
+  are disabled)
+
+  - V Test with hardcoded values for the HBC Mode: !!! Charge / V Discharge / V
+  Stop and HBC Power: V Charge and V Discharge. Something goes wrong when
+  starting charge mode (backup switched on and directly switched off again)
+
+  - V Limited Test with HBC to check that the Anker charging, discharging and stop are working
+
+    - V HBC Control Mode: Manual -> RS485 Control Mode Helper: disable -> Anker Battery: manual with preset=0
+
+    - V HBC Control Mode: Full Control with Strategy: Sell -> RS485 Control Mode Helper: enable and Forcible Charge/Discharge: discharge -> Anker Battery: manual with preset=1200
+
+    - V HBC Strategy: Charge -> Forcibe Charge/Discharge Helper: charge -> Anker Battery: backup with output limit=1200
+
+    - V HBC Strategy: Manual -> RS485 Control Mode Helper: stop -> Anker Battery: manual with preset=0
+
+    - V HBC Strategy: Timed (2 blocks one with Sell and one with Charge)
+
+  - _ Max Charge and Discharge Power cannot be changed in the current approach
+  but this may be needed to limit the discharge and charge power for the HBC
+  Sell and Charge strategies. Anker SolarBank Input Limit can only be a multiple
+  of 100W (0,100,..,1200) but is already used to set the charge power. The Anker
+  SolarBank Output Limit can only be 800W or 1200W. Currently these Anker Input
+  and output limit cannot be changed via the HBC User Interface.
+
+  - _ Built in a delay between subsequent changes in the Anker Battery (minimum
+  is 30s but better would be 240s-300s)
+
+  - _ Support for HBC Self-Consumption via the internal 'smartmeter' mode of the
+  Anker SolarBank.  This will not and cannot use the HBC PID controller since
+  steering Power via the cloud is to slow.
+
+  - _ Create a blueprint for the HBC Anker Charge or Discharge Automation
+
+triggers:
+  - trigger: state
+    entity_id:
+      - input_select.marstek_m1_anker_helper_forcible_charge_discharge
+    to:
+      - charge
+    id: Start-Charge
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 2
+  - trigger: state
+    entity_id:
+      - input_select.marstek_m1_anker_helper_forcible_charge_discharge
+    to:
+      - discharge
+    id: Start-Discharge
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 2
+  - trigger: state
+    entity_id:
+      - input_select.marstek_m1_anker_helper_forcible_charge_discharge
+    to:
+      - stop
+    id: Stop-Charge-or-Discharge
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 2
+  - trigger: state
+    entity_id:
+      - select.marstek_m1_rs485_control_mode
+    id: Control-Mode
+    for:
+      hours: 0
+      minutes: 0
+      seconds: 1
+  - trigger: state
+    entity_id:
+      - input_number.marstek_m1_anker_helper_forcible_charge_power
+    id: Charge-Power
+  - trigger: state
+    entity_id:
+      - input_number.marstek_m1_anker_helper_forcible_discharge_power
+    id: Discharge-Power
+    enabled: false
+conditions: []
+actions:
+  - alias: Delay a little (300ms) to allow HBC to update the Power value
+    delay:
+      hours: 0
+      minutes: 0
+      seconds: 0
+      milliseconds: 300
+  - alias: Retrieve current HBC states as variables
+    variables:
+      hbc_ctrl: "{{ states('input_select.marstek_m1_anker_helper_rs485_control_mode') }} "
+      hbc_mode: "{{ states('select.marstek_m1_forcible_charge_discharge') }}"
+      hbc_mode2: stop
+      hbc_charge_power: "{{ states('number.marstek_m1_forcible_charge_power') | int(0) }}"
+      hbc_discharge_power: "{{ states('number.marstek_m1_forcible_discharge_power') | int(0) }}"
+      hbc_charge_power2: "{{ 777 }}"
+      hbc_discharge_power2: "{{ 972 }}"
+      hbc_max_charge: "{{ states('number.marstek_m1_max_charge_power') | int(0) }}"
+      hbc_max_discharge: "{{ states('number.marstek_m1_max_discharge_power') | int(0) }}"
+  - alias: >-
+      Initialize some trigger values and datas as preparation for the steering
+      of the battery and notification messages
+    variables:
+      TEST_INDIVIDUAL_UPDATES: false
+      NOTIFY_VAR_PHONE: notify.none
+      NOTIFY_VAR_PHONE2: notify.mobile_app_sm_a536b
+      ANKER_CHARGE_MODE: backup
+      ANKER_DISCHARGE_MODE: manual
+      ANKER_STOP_MODE: manual
+      ANKER_NOM_MODE: smart
+      DATE_FORMAT: "%Y-%m-%d %H:%M:%S"
+      EOD_TIME: "23:59:59"
+      trigger_id: "{{ trigger.id | default('No-Trigger-Id') }}"
+      trigger_entity_id: "{{ trigger.entity_id | default('No-Entity-Id') }}"
+      trigger_from_state: >-
+        {% if trigger.from_state is defined %} {{ trigger.from_state.state |
+        default('no-from') }} {% else %} {{ 'n/a' }} {% endif %}
+      trigger_to_state: >-
+        {% if trigger.to_state   is defined %} {{ trigger.to_state.state   |
+        default('no-to'  ) }} {% else %} {{ 'n/a' }} {% endif %}
+      now_str: "{{ now().strftime(DATE_FORMAT) }}"
+      tomorrow_eod_str: "{{ (today_at(EOD_TIME) + timedelta(days=0)).strftime(DATE_FORMAT) }}"
+      hbc_state_message: >-
+        HBC State at {{ now_str }}:{{ '\u2800\n' -}} Control={{ hbc_ctrl }},
+        Mode={{ hbc_mode }} and Power={{ hbc_charge_power }}.{{ '\u2800\n' -}}
+        Trigger for entity=[{{ trigger_entity_id }}] from '{{ trigger_from_state
+        }}' to '{{ trigger_to_state }}'.
+  - alias: >-
+      Define Anker Entity Names as variables (change these for another
+      battery!). Backup fields are needed since Anker SolarBank does not have a
+      charge mode (hopefully not needed for other batteries). Several different
+      Notifications can be sent to a variable phone (make sure to define your
+      own phone notification here!)
+    variables:
+      anker_usage_mode_entity: select.solarbank_3_e2700_pro_usage_mode
+      anker_discharge_power_entity: number.solarbank_3_e2700_pro_system_output_preset
+      anker_charge_power_entity: select.solarbank_3_e2700_pro_ac_input_limit
+      anker_backup_option_entity: switch.solarbank_3_e2700_pro_backup_option
+      anker_backup_start_entity: datetime.solarbank_3_e2700_pro_backup_start
+      anker_backup_end_entity: datetime.solarbank_3_e2700_pro_backup_end
+  - alias: Retrieve current Anker states as variables
+    variables:
+      current_anker_usage_mode: "{{ states(anker_usage_mode_entity) }}"
+      current_anker_discharge_power: "{{ states(anker_discharge_power_entity) | int(0) }}"
+      current_anker_charge_power: "{{ states(anker_charge_power_entity) | int(0) }}"
+      current_anker_backup_option: "{{ states(anker_backup_option_entity) }}"
+      current_anker_backup_start: "{{ states(anker_backup_start_entity) }}"
+      current_anker_backup_end: "{{ states(anker_backup_end_entity) }}"
+      anker_is_charging: "{{ (current_anker_usage_mode == ANKER_CHARGE_MODE) }}"
+      anker_is_discharging: >-
+        {{ (current_anker_usage_mode == ANKER_DISCHARGE_MODE) and
+        (current_anker_discharge_power >  0) }}
+      anker_is_stopped: >-
+        {{ (current_anker_usage_mode == ANKER_STOP_MODE) and
+        (current_anker_discharge_power == 0) }}
+  - alias: Determine the Target Anker states as variables
+    variables:
+      target_anker_charge_mode: "{{ (hbc_ctrl == 'enable') and (hbc_mode == 'charge') }}"
+      target_anker_discharge_mode: "{{ (hbc_ctrl == 'enable') and (hbc_mode == 'discharge') }}"
+      target_anker_stop_mode: "{{ (hbc_ctrl == 'disable') or (hbc_mode == 'stop') }}"
+      target_anker_mode: >-
+        {% if target_anker_charge_mode %} {{ 'backup' }} {% elif
+        target_anker_discharge_mode %} {{ 'manual' }} {% elif
+        target_anker_stop_mode %} {{ 'manual' }} {% else %} {{ 'unknown' }} {%
+        endif %}
+      target_discharge_power: "{{ [hbc_discharge_power, hbc_max_discharge] | min }}"
+      target_discharge_power10: "{{ ((target_discharge_power / 10) | round(0) * 10) }}"
+      target_charge_power: "{{ [hbc_charge_power, hbc_max_charge] | min }}"
+      target_charge_power100_option: "{{ (((target_charge_power / 100) | round(0)) * 100) | string() }}"
+      target_stop_power: 0
+  - alias: >-
+      If Target is charging for the Anker Battery (HBC ctrl=enable and
+      mode=charge) then Handle Charging
+    if:
+      - condition: template
+        alias: Should the Anker Battery Charge?
+        value_template: "{{ target_anker_charge_mode }}"
+    then:
+      - alias: If not yet Charging then Start Charging the Anker Battery
+        if:
+          - condition: template
+            alias: Anker Battery not yet Charging?
+            value_template: "{{ not anker_is_charging }}"
+        then:
+          - alias: Switch on the Backup Mode (for charging) of the Anker Battery
+            action: switch.turn_on
+            target:
+              entity_id: "{{ anker_backup_option_entity }}"
+          - alias: >-
+              Set the Anker Backup End datetime field (using set_value NOT
+              set_datetime!)
+            action: datetime.set_value
+            target:
+              entity_id: "{{ anker_backup_end_entity }}"
+            data:
+              datetime: "{{ tomorrow_eod_str }}"
+          - alias: Notify the Variable Phone about Charging
+            action: "{{ NOTIFY_VAR_PHONE }}"
+            metadata: {}
+            data:
+              title: HBC triggers Charging M1
+              message: HBC triggers Charging of the Anker Battery (M1).
+            enabled: true
+          - delay:
+              hours: 0
+              minutes: 0
+              seconds: 1
+              milliseconds: 0
+            alias: >-
+              Delay for 1 second (needed or otherwise backup is switched off
+              again when setting the input limit)
+        enabled: true
+      - alias: If Charge Power is incorrect then Adapt the Anker Charge Power
+        if:
+          - condition: template
+            alias: >-
+              Anker Battery Charge Power is not correct (current power is
+              different from target power as multiple of 100) (For another
+              battery compare with target_charge_power)?
+            value_template: "{{ (current_anker_charge_power != target_charge_power100_option) }}"
+        then:
+          - alias: >-
+              Change the Charge Power Value (using AC Input Limit) of the Anker 
+              Battery (DOES NOT WORK FOR ANKER SINCE INPUT LIMIT IS A SELECT ISO
+              A NUMBER!)
+            action: number.set_value
+            target:
+              entity_id: "{{ anker_charge_power_entity }}"
+            data:
+              value: "{{ target_charge_power }}"
+            enabled: false
+          - alias: >-
+              Select the Charge Power Option (AC Input Limit) of the Anker
+              Battery  (FOR ANKER THIS IS AN OPTION SELECT WHERE OPTIONS ARE
+              MULTIPLES OF 100 (0,100,..,1200))
+            action: select.select_option
+            target:
+              entity_id: "{{ anker_charge_power_entity }}"
+            data:
+              option: "{{ target_charge_power100_option }}"
+          - alias: Notify the Variable Phone about Charge Power
+            action: "{{ NOTIFY_VAR_PHONE }}"
+            metadata: {}
+            data:
+              title: HBC adapted M1 Charge Power
+              message: HBC changes the Charge Power for the Anker Battery (M1).
+            enabled: false
+        enabled: true
+    else:
+      - alias: >-
+          If currently Charging then Stop Charging the Anker Battery (this
+          else-branch is only needed for the anker SB3 battery since it
+          (mis)uses the backup mode to charge the battery)
+        if:
+          - condition: template
+            alias: Anker Battery currently Charging?
+            value_template: "{{ anker_is_charging }}"
+        then:
+          - alias: Switch off the Backup Mode (for charging) of the Anker Battery
+            action: switch.turn_off
+            target:
+              entity_id: "{{ anker_backup_option_entity }}"
+          - alias: Select the Maximum Charge Limit of the Anker Battery
+            action: select.select_option
+            target:
+              entity_id: "{{ anker_charge_power_entity }}"
+            data:
+              option: "{{ hbc_max_charge }}"
+          - alias: Notify the Variable Phone about Backup Off
+            action: "{{ NOTIFY_VAR_PHONE }}"
+            metadata: {}
+            data:
+              title: HBC triggers Backup Off M1
+              message: HBC triggers Switch Off Backup of the Anker Battery (M1).
+            enabled: false
+          - alias: >-
+              Delay the next Anker Update for 1 second (after disabling the
+              backup option)
+            delay:
+              hours: 0
+              minutes: 0
+              seconds: 1
+              milliseconds: 0
+        enabled: true
+    enabled: true
+  - alias: >-
+      If Target is discharging for the Anker Battery (HBC ctrl=enable and
+      mode=discharge) then Handle Discharging
+    if:
+      - condition: template
+        alias: Should the Anker Battery Discharge?
+        value_template: "{{ target_anker_discharge_mode }}"
+    then:
+      - alias: If not yet Discharging then Start Discharging the Anker Battery
+        if:
+          - condition: template
+            alias: Anker Battery not yet Discharging?
+            value_template: "{{ not anker_is_discharging }}"
+        then:
+          - alias: >-
+              Select the Manual Mode (for Custom discharging) of the Anker
+              Battery
+            action: select.select_option
+            target:
+              entity_id: "{{ anker_usage_mode_entity }}"
+            data:
+              option: "{{ ANKER_DISCHARGE_MODE }}"
+          - alias: Notify the Variable Phone about Discharging
+            action: "{{ NOTIFY_VAR_PHONE }}"
+            metadata: {}
+            data:
+              title: HBC triggers Discharging M1
+              message: HBC triggers Discharging of the Anker Battery (M1).
+            enabled: true
+        enabled: true
+      - alias: If Discharge Power is incorrect then Adapt the Anker Discharge Power
+        if:
+          - condition: template
+            alias: >-
+              Anker Battery Discharge Power is not correct (current power is
+              different from target power)?
+            value_template: "{{ anker_discharge_power != target_discharge_power }}"
+        then:
+          - alias: >-
+              Change the Discharge Power Value (using System Output Preset) of
+              the Anker Battery. For Anker the Power is rounded at 10W.
+            action: number.set_value
+            target:
+              entity_id: "{{ anker_discharge_power_entity }}"
+            data:
+              value: "{{ target_discharge_power10 }}"
+          - alias: Notify the Variable Phone about Discharge Power
+            action: "{{ NOTIFY_VAR_PHONE }}"
+            metadata: {}
+            data:
+              title: HBC adapted M1 Discharge Power
+              message: HBC changes the Discharge Power for the Anker Battery (M1).
+            enabled: false
+        enabled: true
+    enabled: true
+  - alias: >-
+      If Target is stop (charging or discharging) the Anker Battery (HBC
+      ctrl=disable or mode=stop) then Handle Stop
+    if:
+      - condition: template
+        alias: Should the Anker Battery Stop (Charging or Discharge)?
+        value_template: "{{ target_anker_stop_mode }}"
+    then:
+      - alias: If not yet Stopped then Stop Charging/Discharging the Anker Battery
+        if:
+          - condition: template
+            alias: Anker Battery not yet Stopped?
+            value_template: "{{ not anker_is_stopped }}"
+        then:
+          - alias: >-
+              Select the Manual Mode (for Custom discharging) of the Anker
+              Battery
+            action: select.select_option
+            target:
+              entity_id: "{{ anker_usage_mode_entity }}"
+            data:
+              option: "{{ ANKER_DISCHARGE_MODE }}"
+          - alias: Notify the Variable Phone about Stop
+            action: "{{ NOTIFY_VAR_PHONE }}"
+            metadata: {}
+            data:
+              title: HBC triggers Stopping M1
+              message: HBC triggers Stopping of the Anker Battery (M1).
+            enabled: true
+        enabled: true
+      - alias: >-
+          If Stop Power is incorrect then Adapt the Anker Stop Power (Discharge
+          of Zero)
+        if:
+          - condition: template
+            alias: >-
+              Anker Battery Stop Power is not correct (current power is not
+              zero)
+            value_template: "{{ anker_discharge_power != target_stop_power }}"
+        then:
+          - alias: >-
+              Set the Discharge Power Value to Zero (using System Output Preset)
+              of the Anker Battery
+            action: number.set_value
+            target:
+              entity_id: "{{ anker_discharge_power_entity }}"
+            data:
+              value: "{{ target_stop_power }}"
+          - alias: Notify the Variable Phone about Stop Power
+            action: "{{ NOTIFY_VAR_PHONE }}"
+            metadata: {}
+            data:
+              title: HBC adapted M1 Stop Power
+              message: >-
+                HBC changes the Discharge Power to Zero for the Anker Battery
+                (M1).
+            enabled: false
+        enabled: true
+    enabled: true
+  - alias: Perform individual updates of Anker Entities for testing (disable 3 branches above when using this branch)  
+    if: 
+      - condition: template
+        alias: Testing Individual Updates
+        value_template: "{{ TEST_INDIVIDUAL_UPDATES }}"
+    then:
+      - alias: Testing Turn on (or off) the Anker Backup Option
+        action: switch.turn_on
+        target:
+          entity_id: "{{ anker_backup_option_entity }}"
+        data: {}
+        enabled: false
+      - delay:
+          hours: 0
+          minutes: 0
+          seconds: 0
+          milliseconds: 0
+        enabled: false
+      - alias: >-
+          Test Setting the Anker Backup End datetime field (using set value NOT set
+          datetime!)
+        action: datetime.set_value
+        target:
+          entity_id: "{{ anker_backup_end_entity }}"
+        data:
+          datetime: "{{ tomorrow_eod_str }}"
+        enabled: false
+      - delay:
+          hours: 0
+          minutes: 0
+          seconds: 1
+          milliseconds: 0
+        enabled: false
+      - alias: >-
+          Testing Select the Charge Power Option (AC Input Limit) of the Anker
+          Battery (0,100,..,1200)
+        action: select.select_option
+        target:
+          entity_id: "{{ anker_charge_power_entity }}"
+        data:
+          option: "{{ target_charge_power100_option }}"
+        enabled: true
+      - alias: >-
+          Testing Change the Charge Power Value (AC Input Limit) of the Anker
+          Battery (DOES NOT WORK FOR ANKER SINCE INPUT LIMIT IS A SELECT ISO A
+          NUMBER!)
+        action: number.set_value
+        target:
+          entity_id: "{{ anker_charge_power_entity }}"
+        data:
+          value: "{{ target_charge_power }}"
+        enabled: false
+      - alias: Testing Select the Manual (Custom) Mode of the Anker Battery
+        action: select.select_option
+        target:
+          entity_id: "{{ anker_usage_mode_entity }}"
+        data:
+          option: "{{ ANKER_DISCHARGE_MODE }}"
+        enabled: false
+      - alias: >-
+          Testing Change the Discharge Power (System Output Preset) Value of the
+          Anker Battery
+        action: number.set_value
+        target:
+          entity_id: "{{ anker_discharge_power_entity }}"
+        data:
+          value: "{{ anker_discharge_power }}"
+        enabled: false
+      - alias: Test Notification to a Variable Phone
+        action: "{{ NOTIFY_VAR_PHONE }}"
+        data:
+          title: Notification Test for a Variabele Phone
+          message: >-
+            Trigger received '{{ trigger_id }}' and notifying my variabele {{
+            NOTIFY_VAR_PHONE }} phone.  {# I am forcing 3 new lines: #} {{
+            '\u2800\n\u2800\n\u2800\n' -}}  {{ hbc_state_message }}
+        enabled: false
+mode: single
