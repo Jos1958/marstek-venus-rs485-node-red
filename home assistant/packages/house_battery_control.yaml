@@ -516,7 +516,7 @@ input_number:
     name: "Marstek M1 Charging Cutoff Capacity"
     min: 80
     max: 100
-    initial: 100
+    # initial: 100
     step: 1
     unit_of_measurement: "%"
     mode: box
@@ -535,7 +535,7 @@ input_number:
     name: "Marstek M2 Charging Cutoff Capacity"
     min: 80
     max: 100
-    initial: 100
+    # initial: 100
     step: 1
     unit_of_measurement: "%"
     mode: box
@@ -554,7 +554,7 @@ input_number:
     name: "Marstek M3 Charging Cutoff Capacity"
     min: 80
     max: 100
-    initial: 100
+    # initial: 100
     step: 1
     unit_of_measurement: "%"
     mode: box
@@ -573,7 +573,7 @@ input_number:
     name: "Marstek M4 Charging Cutoff Capacity"
     min: 80
     max: 100
-    initial: 100
+    # initial: 100
     step: 1
     unit_of_measurement: "%"
     mode: box
@@ -592,7 +592,7 @@ input_number:
     name: "Marstek M5 Charging Cutoff Capacity"
     min: 80
     max: 100
-    initial: 100
+    # initial: 100
     step: 1
     unit_of_measurement: "%"
     mode: box
@@ -611,7 +611,7 @@ input_number:
     name: "Marstek M6 Charging Cutoff Capacity"
     min: 80
     max: 100
-    initial: 100
+    # initial: 100
     step: 1
     unit_of_measurement: "%"
     mode: box
